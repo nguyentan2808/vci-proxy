@@ -14,7 +14,7 @@ app.use(
         origin: (origin, callback) => {
             // Allow requests with no origin (like mobile apps or curl requests)
             if (!origin) return callback(null, true);
-            
+
             // For requests with credentials, return the specific origin
             // For requests without credentials, allow any origin
             return callback(null, origin);
@@ -28,17 +28,20 @@ app.use(
 // Handle preflight requests explicitly
 app.options("*", (req, res) => {
     const origin = req.headers.origin;
-    
+
     if (origin) {
         res.header("Access-Control-Allow-Origin", origin);
     } else {
         res.header("Access-Control-Allow-Origin", "*");
     }
-    
+
     res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
-    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept, Origin, device-id");
+    res.header(
+        "Access-Control-Allow-Headers",
+        "Content-Type, Authorization, X-Requested-With, Accept, Origin, device-id"
+    );
     res.header("Access-Control-Allow-Credentials", "true");
-    
+
     res.sendStatus(200);
 });
 
@@ -59,7 +62,7 @@ const createProxyOptions = (targetUrl) => {
         },
         onProxyReq: (proxyReq, req, res) => {
             // Log the outgoing request for debugging
-            console.log(`Proxying ${req.method} request to: ${proxyReq.getHeader('host')}${proxyReq.path}`);
+            console.log(`Proxying ${req.method} request to: ${proxyReq.getHeader("host")}${proxyReq.path}`);
         },
         onProxyRes: (proxyRes, req, res) => {
             // Set CORS headers on response to match our CORS policy
@@ -69,20 +72,22 @@ const createProxyOptions = (targetUrl) => {
             } else {
                 proxyRes.headers["Access-Control-Allow-Origin"] = "*";
             }
-            
+
             proxyRes.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH";
-            proxyRes.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, Accept, Origin, device-id";
+            proxyRes.headers["Access-Control-Allow-Headers"] =
+                "Content-Type, Authorization, X-Requested-With, Accept, Origin, device-id";
             proxyRes.headers["Access-Control-Allow-Credentials"] = "true";
-            
+
             // Remove restrictive headers
             delete proxyRes.headers["X-Frame-Options"];
             delete proxyRes.headers["x-frame-options"];
         },
     };
 };
-
-// Dynamic proxy middleware
 app.use("/proxy", (req, res, next) => {
+    const start = Date.now();
+    console.log(`\n[START] ${req.method} ${req.originalUrl}`);
+
     const targetUrl = req.query.target || req.headers["x-target-url"];
 
     if (!targetUrl) {
@@ -100,10 +105,34 @@ app.use("/proxy", (req, res, next) => {
     }
 
     const proxyOptions = createProxyOptions(targetUrl);
+
+    // Step 1: Request arrives at proxy
+    proxyOptions.onProxyReq = (proxyReq, req, res) => {
+        req._tProxyReq = Date.now();
+        console.log(`[STEP 1] Request received at proxy: ${req._tProxyReq - start} ms since start`);
+        console.log(
+            `[STEP 2] Outgoing request sent to target: host=${proxyReq.getHeader("host")}, path=${proxyReq.path}`
+        );
+    };
+
+    // Step 2: Response comes back from target
+    proxyOptions.onProxyRes = (proxyRes, req, res) => {
+        req._tProxyRes = Date.now();
+        console.log(
+            `[STEP 3] Response received from target: ${req._tProxyRes - req._tProxyReq} ms after sending request`
+        );
+
+        // Final step: when response is finished sending back to client
+        res.on("finish", () => {
+            const end = Date.now();
+            console.log(`[STEP 4] Response delivered to client: ${end - req._tProxyRes} ms after target response`);
+            console.log(`[TOTAL] End-to-end latency: ${end - start} ms\n`);
+        });
+    };
+
     const proxy = createProxyMiddleware(proxyOptions);
     proxy(req, res, next);
 });
-
 // Health check endpoint
 app.get("/health", (req, res) => {
     res.json({ status: "OK", message: "CORS Proxy Server is running" });
