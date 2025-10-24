@@ -3,14 +3,14 @@
  * Populates the cache with initial data
  */
 
-const fetch = require('node-fetch');
+const axios = require('axios');
 const cacheManager = require('./cache-manager');
 
 class DataInitializer {
     constructor() {
         this.baseUrl = 'https://trading.vietcap.com.vn';
         this.headers = {
-            'accept': 'application/json, text/plain, */*',
+            accept: 'application/json, text/plain, */*',
             'accept-language': 'en-US,en;q=0.9,vi-VN;q=0.8,vi;q=0.7',
             'content-type': 'application/json',
             'device-id': '1932fb6ac4452e03',
@@ -20,7 +20,8 @@ class DataInitializer {
             'sec-fetch-dest': 'empty',
             'sec-fetch-mode': 'cors',
             'sec-fetch-site': 'same-origin',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36'
+            'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
         };
     }
 
@@ -47,7 +48,7 @@ class DataInitializer {
             }
 
             // Step 3: Load stock data for each exchange
-            const exchanges = ['HOSE', 'HNX', 'UPCOM', "VN30", "HNX30"];
+            const exchanges = ['HOSE', 'HNX', 'UPCOM', 'VN30', 'HNX30'];
             for (const exchange of exchanges) {
                 await this.loadExchangeData(exchange);
             }
@@ -58,7 +59,6 @@ class DataInitializer {
             const duration = Date.now() - startTime;
             console.log(`[INIT] Data initialization completed in ${duration}ms`);
             console.log('[INIT] Cache stats:', cacheManager.getStats());
-
         } catch (error) {
             console.error('[INIT] Failed to initialize data:', error);
             throw error;
@@ -70,21 +70,21 @@ class DataInitializer {
      */
     async loadAllSymbols() {
         console.log('[INIT] Loading all symbols metadata...');
-        
+
         const url = `${this.baseUrl}/api/price/symbols/getAll`;
-        const response = await fetch(url, {
-            method: 'GET',
+        const response = await axios.get(url, {
             headers: {
                 ...this.headers,
-                'referrer': 'https://trading.vietcap.com.vn/price-board?filter-group=WL&filter-value=DEFAULT&view-type=FLAT'
-            }
+                referrer:
+                    'https://trading.vietcap.com.vn/price-board?filter-group=WL&filter-value=DEFAULT&view-type=FLAT',
+            },
         });
 
-        if (!response.ok) {
+        if (response.status !== 200) {
             throw new Error(`Failed to fetch symbols: ${response.status} ${response.statusText}`);
         }
 
-        const symbols = await response.json();
+        const symbols = response.data;
         cacheManager.setSymbols(symbols);
         console.log(`[INIT] Loaded ${symbols.length} symbols metadata`);
     }
@@ -94,25 +94,25 @@ class DataInitializer {
      */
     async loadCompanies() {
         console.log('[INIT] Loading company listing info...');
-        
-        const url = `${this.baseUrl}/data-mt/graphql`;
-        const body = '{"operationName":"Query","variables":{},"query":"query Query {\\n  ListIcbCode {\\n    icbCode\\n    level\\n    icbName\\n    enIcbName\\n    __typename\\n  }\\n  CompaniesListingInfo {\\n    ticker\\n    icbCode1\\n    icbCode2\\n    icbCode3\\n    icbCode4\\n    __typename\\n  }\\n}"}';
 
-        const response = await fetch(url, {
-            method: 'POST',
+        const url = `${this.baseUrl}/data-mt/graphql`;
+        const body =
+            '{"operationName":"Query","variables":{},"query":"query Query {\\n  ListIcbCode {\\n    icbCode\\n    level\\n    icbName\\n    enIcbName\\n    __typename\\n  }\\n  CompaniesListingInfo {\\n    ticker\\n    icbCode1\\n    icbCode2\\n    icbCode3\\n    icbCode4\\n    __typename\\n  }\\n}"}';
+
+        const response = await axios.post(url, body, {
             headers: {
                 ...this.headers,
-                'referrer': 'https://trading.vietcap.com.vn/price-board?filter-group=HOSE&filter-value=HOSE&view-type=FLAT'
+                referrer:
+                    'https://trading.vietcap.com.vn/price-board?filter-group=HOSE&filter-value=HOSE&view-type=FLAT',
             },
-            body,
-            credentials: 'include'
+            withCredentials: true,
         });
 
-        if (!response.ok) {
+        if (response.status !== 200) {
             throw new Error(`Failed to fetch companies: ${response.status} ${response.statusText}`);
         }
 
-        const data = await response.json();
+        const data = response.data;
         cacheManager.setCompanies(data.data.CompaniesListingInfo);
         console.log(`[INIT] Loaded ${data.data.CompaniesListingInfo.length} companies`);
     }
@@ -123,42 +123,44 @@ class DataInitializer {
      */
     async loadExchangeData(exchange) {
         console.log(`[INIT] Loading ${exchange} exchange data...`);
-        
+
         // First get symbols for this exchange
         const symbolsUrl = `${this.baseUrl}/api/price/symbols/getByGroup?group=${exchange}`;
-        const symbolsResponse = await fetch(symbolsUrl, {
-            method: 'GET',
-            headers: this.headers
+        const symbolsResponse = await axios.get(symbolsUrl, {
+            headers: this.headers,
         });
 
-        if (!symbolsResponse.ok) {
+        if (symbolsResponse.status !== 200) {
             throw new Error(`Failed to fetch ${exchange} symbols: ${symbolsResponse.status}`);
         }
 
-        const symbols = await symbolsResponse.json();
-        const symbolList = symbols.map(item => item.symbol);
+        const symbols = symbolsResponse.data;
+        const symbolList = symbols.map((item) => item.symbol);
         cacheManager.setSymbolsByGroup(exchange, symbolList);
         console.log(`[INIT] Found ${symbolList.length} symbols for ${exchange}`);
 
         // Then get compressed stock data for all symbols
         const stockDataUrl = `${this.baseUrl}/api/price/v3/symbols/w/compress/getList`;
-        const stockDataResponse = await fetch(stockDataUrl, {
-            method: 'POST',
-            headers: {
-                ...this.headers,
-                'referrer': 'https://trading.vietcap.com.vn/price-board?filter-group=HOSE&filter-value=HOSE&view-type=FLAT'
+        const stockDataResponse = await axios.post(
+            stockDataUrl,
+            { group: exchange },
+            {
+                headers: {
+                    ...this.headers,
+                    referrer:
+                        'https://trading.vietcap.com.vn/price-board?filter-group=HOSE&filter-value=HOSE&view-type=FLAT',
+                },
             },
-            body: JSON.stringify({ group: exchange })
-        });
+        );
 
-        if (!stockDataResponse.ok) {
+        if (stockDataResponse.status !== 200) {
             throw new Error(`Failed to fetch ${exchange} stock data: ${stockDataResponse.status}`);
         }
 
-        const stockDataArray = await stockDataResponse.json();
+        const stockDataArray = stockDataResponse.data;
         const stockDataMap = {};
-        
-        stockDataArray.forEach(item => {
+
+        stockDataArray.forEach((item) => {
             // Transform compressed data to StockData format
             const stockData = this.transformCompressedToStockData(item);
             stockDataMap[item.s] = stockData;
@@ -173,29 +175,31 @@ class DataInitializer {
      */
     async loadMarketIndexes() {
         console.log('[INIT] Loading market indexes...');
-        
+
         // Common market indexes
         const indexSymbols = ['VN30', 'VNINDEX', 'HNX30', 'HNXIndex', 'HNXUpcomIndex'];
-        
-        const url = `${this.baseUrl}/api/price/marketIndex/getList`;
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                ...this.headers,
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ symbols: indexSymbols })
-        });
 
-        if (!response.ok) {
+        const url = `${this.baseUrl}/api/price/marketIndex/getList`;
+        const response = await axios.post(
+            url,
+            { symbols: indexSymbols },
+            {
+                headers: {
+                    ...this.headers,
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                },
+            },
+        );
+
+        if (response.status !== 200) {
             throw new Error(`Failed to fetch market indexes: ${response.status} ${response.statusText}`);
         }
 
-        const indexes = await response.json();
+        const indexes = response.data;
         const indexesMap = {};
-        
-        indexes.forEach(index => {
+
+        indexes.forEach((index) => {
             indexesMap[index.symbol] = index;
         });
 
@@ -264,9 +268,9 @@ class DataInitializer {
      */
     getAllSymbolsForRealtime() {
         const allSymbols = [];
-        
+
         // Get symbols from each exchange
-        ['HOSE', 'HNX', 'UPCOM', "VN30", "HNX30"].forEach(exchange => {
+        ['HOSE', 'HNX', 'UPCOM', 'VN30', 'HNX30'].forEach((exchange) => {
             const symbols = cacheManager.getSymbolsByGroup(exchange);
             allSymbols.push(...symbols);
         });
