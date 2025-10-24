@@ -58,7 +58,7 @@ class RealtimeManager {
      */
     async loadProtobufSchema() {
         try {
-            const protoPath = path.join(__dirname, '../public/price.proto');
+            const protoPath = path.join('./price.proto');
             const root = await protobuf.load(protoPath);
 
             // Cache message types for better performance
