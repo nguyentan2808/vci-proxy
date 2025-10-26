@@ -84,7 +84,7 @@ class DataInitializer {
             throw new Error(`Failed to fetch symbols: ${response.status} ${response.statusText}`);
         }
 
-        const symbols = response.data;
+        let symbols = response.data;
 
         symbols = symbols.filter((symbol) => symbol.group !== 'DELISTED' && symbol.type === 'STOCK');
 
