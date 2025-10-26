@@ -85,6 +85,9 @@ class DataInitializer {
         }
 
         const symbols = response.data;
+
+        symbols = symbols.filter((symbol) => symbol.group !== 'DELISTED' && symbol.type === 'STOCK');
+
         cacheManager.setSymbols(symbols);
         console.log(`[INIT] Loaded ${symbols.length} symbols metadata`);
     }
