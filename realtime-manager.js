@@ -267,7 +267,7 @@ class RealtimeManager {
             };
             cacheManager.updateStockData(symbol, updateData);
             // console.log(`[CACHE-UPDATE] Updated bid-ask for ${symbol}: bid1=${bidPrices[0]?.price || 0}, ask1=${askPrices[0]?.price || 0}`);
-        } else if (type === 'index' && message.symbol.includes('VN30')) {
+        } else if (type === 'index') {
             // Update market index data
             console.log(
                 `[CACHE-UPDATE] Updated index for ${symbol}: price=${message.price}, change=${message.change}%`,

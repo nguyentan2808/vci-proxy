@@ -13,12 +13,14 @@ const cacheManager = require('./cache-manager');
 const DataInitializer = require('./data-initializer');
 const RealtimeManager = require('./realtime-manager');
 const BroadcastService = require('./broadcast-service');
+const Scheduler = require('./scheduler');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Configuration toggle
-const SERVER_MODE = process.env.SERVER_MODE || 'cache'; // 'proxy' or 'cache'
+const SERVER_MODE = 'cache'; // 'proxy' or 'cache'
+// const SERVER_MODE = process.env.SERVER_MODE || 'cache'; // 'proxy' or 'cache'
 const ENABLE_CACHE_MODE = SERVER_MODE === 'cache';
 
 console.log(`[CONFIG] Server mode: ${SERVER_MODE} (Cache mode: ${ENABLE_CACHE_MODE})`);
@@ -58,6 +60,7 @@ app.use(express.json());
 
 // Timing middleware for API endpoints
 app.use('/', (req, res, next) => {
+    console.log(`[API] ${req.method} ${req.originalUrl}`);
     const startTime = Date.now();
     const originalSend = res.send;
 
@@ -108,6 +111,7 @@ app.options('*', (req, res) => {
 let dataInitializer;
 let realtimeManager;
 let broadcastService;
+let scheduler;
 
 // REST API Endpoints - Serve cached data (only in cache mode)
 if (ENABLE_CACHE_MODE) {
@@ -118,6 +122,7 @@ if (ENABLE_CACHE_MODE) {
      * Return all symbols metadata
      */
     app.get('/price/symbols/getAll', (req, res) => {
+        console.log('[API] Getting all symbols');
         try {
             if (!cacheManager.isReady()) {
                 return res.status(503).json({ error: 'Cache not ready' });
@@ -430,6 +435,7 @@ app.get('/health', (req, res) => {
             ? realtimeManager.getStatus()
             : { isConnected: false, error: 'Not initialized' };
         const broadcastStats = broadcastService ? broadcastService.getStats() : null;
+        const schedulerStatus = scheduler ? scheduler.getStatus() : { isRunning: false, error: 'Not initialized' };
 
         response.cache = {
             ready: cacheManager.isReady(),
@@ -437,6 +443,7 @@ app.get('/health', (req, res) => {
         };
         response.realtime = realtimeStatus;
         response.broadcast = broadcastStats;
+        response.scheduler = schedulerStatus;
     }
 
     res.json(response);
@@ -520,12 +527,23 @@ async function startServer() {
                 );
                 realtimeManager = null;
             }
+
+            // Step 4: Initialize scheduler for daily data refresh
+            console.log('[SERVER] Step 4: Initializing data refresh scheduler...');
+            try {
+                scheduler = new Scheduler();
+                scheduler.start();
+                console.log('[SERVER] Scheduler initialized successfully');
+            } catch (error) {
+                console.warn('[SERVER] Failed to initialize scheduler:', error.message);
+                scheduler = null;
+            }
         } else {
             console.log('[SERVER] Starting Proxy Server...');
         }
 
-        // Step 4: Start HTTP server
-        console.log('[SERVER] Step 4: Starting HTTP server...');
+        // Step 5: Start HTTP server
+        console.log('[SERVER] Step 5: Starting HTTP server...');
         server.listen(PORT, () => {
             if (ENABLE_CACHE_MODE) {
                 console.log(`[SERVER] Cache Server running on port ${PORT}`);
@@ -548,6 +566,10 @@ async function startServer() {
 // Graceful shutdown
 process.on('SIGINT', () => {
     console.log('\n[SERVER] Shutting down gracefully...');
+
+    if (scheduler) {
+        scheduler.stop();
+    }
 
     if (realtimeManager) {
         realtimeManager.cleanup();
